@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import daisyui from 'daisyui';
 
 export default {
   content: [
@@ -11,8 +12,11 @@ export default {
       colors: {
         background: "var(--background)",
         foreground: "var(--foreground)",
+        recruituBlue: "#0d2496",
+        recruituLightBlue: "#4859f2",
+        hoverBlue: "#7582bf"
       },
     },
   },
-  plugins: [],
+  plugins: [daisyui],
 } satisfies Config;
