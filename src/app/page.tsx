@@ -8,7 +8,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 
-type Message = {
+export type Message = {
   role: 'user' | 'system'
   content: string;
 };
@@ -36,27 +36,13 @@ export default function Home() {
     };
   }, []);
 
-  // const streamSystemMessage = (message: string) => {
-  //   let index = -1;
-  //   setStreamingMessage('');
-  //   const interval = setInterval(() => {
-  //     if (index < message.length) {
-  //       setStreamingMessage((prev) => prev + message[index]);
-  //       index++;
-  //     } else {
-  //       clearInterval(interval);
-  //       setChatHistory((prev) => [...prev, { role: 'system', content: message }]);
-  //       setStreamingMessage(''); 
-  //     }
-  //   }, 25);
-  // };
-
   const handleSend = async () => {
+    console.log("test");
     if (inputValue.trim() !== '') {
-      setChatHistory([...chatHistory, { role: 'user', content: inputValue }]);
+      const updatedChatHistory: Message[] = [...chatHistory, { role: 'user', content: inputValue }];
+      setChatHistory(updatedChatHistory);
       setInputValue('');
-      console.log(chatHistory);
-      // setIsStreaming(true);
+      console.log("[Debug] Frontend Chat History:", JSON.stringify(updatedChatHistory));
 
       try {
         // Make a POST request to the backend API
@@ -65,7 +51,7 @@ export default function Home() {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ message: inputValue, chatHistory: chatHistory}),
+          body: JSON.stringify({ chatHistory: updatedChatHistory }),
         });
   
         if (!response.body) {
@@ -98,7 +84,6 @@ export default function Home() {
               }
             });
           }
-          // setIsStreaming(false);
         } catch (error) {
           console.error('Error making API call:', error);
           setChatHistory((prev) => [
@@ -106,7 +91,6 @@ export default function Home() {
             { role: 'system', content: "Sorry, I couldn't connect to the server." },
           ]);
         } finally {
-          // setIsStreaming(false);
         }
       }
     };    
@@ -129,11 +113,14 @@ export default function Home() {
                       message.role === 'user' ? 'bg-recruituLightBlue text-white' : 'bg-recruituBlue text-white'
                     }`}
                     style ={{
-                      whiteSpace: "pre-wrap", /* Preserve newlines and spacing */
+                      whiteSpace: "pre-line", /* Preserve newlines and spacing */
                       wordWrap: "break-word", /* Break long words */
-                      padding: "10px",
+                      wordBreak: "break-word", /* Prevent overflow for long words */
+                      // padding: "10px",
                       margin: "5px 0",
                       fontFamily: "sans-serif",
+                      maxWidth: "90%", /* Limit bubble width for better readability */
+                      overflow: "hidden", /* Hide any accidental overflow */
                     }}
                   >
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -142,14 +129,6 @@ export default function Home() {
                   </div>
                 </div>
               ))}
-            {/* {!isStreaming && (
-              <div className="chat chat-start">
-              <div className="chat-bubble bg-recruituBlue text-white">
-              <b>Typing...</b>
-              </div>
-              </div>
-            )} */}
-
             </div>
             {/* Input box */}
             <div className="border-t bg-white p-3 flex items-center">
@@ -158,7 +137,10 @@ export default function Home() {
                 placeholder="Message NetworkU"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                onKeyDown={(e) => {
+                  console.log("Key pressed:", e.key);
+                  if (e.key === 'Enter') handleSend();
+                }}
                 className="flex-1 input input-bordered text-black bg-white"
               />
               <button

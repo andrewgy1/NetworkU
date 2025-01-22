@@ -1,6 +1,18 @@
 import { NextResponse, NextRequest } from 'next/server';
-import OpenAI from "openai"
+import OpenAI from "openai";
+import yaml from "js-yaml";
+import fs from "fs";
+import path from "path";
+import { Message } from '../page'; 
 
+interface Config {
+    systemPrompt: string
+    reprompt: string
+    searchPrompt: string
+    coldEmailQuestionPrompt: string
+    clarifyingQuestionPrompt: string
+    generalQuestionPrompt: string
+}
 interface Person{
     id: number,
     document: Document
@@ -60,8 +72,8 @@ interface Document {
     year: number
     day: number
   }
-  
 
+// Functions for OpenAI function call
 const functions = [{
     name: "fetch_recruitu_data",
     description: "retrieve contacts from RecruitU's database of contacts",
@@ -108,229 +120,172 @@ const functions = [{
     }
 }]
 
+// Makes OpenAI function call, queries RecruitU API, and returns contact data
+async function getContacts(chatHistory: Message[], openai: OpenAI){
+    console.log(JSON.stringify(chatHistory));
+    const response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+        ...chatHistory,
+        {
+            role: 'system',
+            content: `Using the user's messages in the chat history, find the information in their queries to find people they can speak to. There will be enough information.`,
+        },
+        { role: 'user', content: `chat history: ${JSON.stringify(chatHistory)} `},
+        ],
+        functions: functions,
+        // function_call: 'auto', // Let the model decide when to call a function
+    });
+    console.log("[Debug]: OpenAI Response", JSON.stringify(response, null, 2));
+    const functionCall = response.choices[0].message?.function_call;
+    console.log("[Debug]: functionCall", functionCall);
+    if (!functionCall) {
+        return NextResponse.json({
+        error: "No function call was generated. Unable to process the request.",
+        });
+    }
+
+    // Create URL to query RecruitU's API
+    const { arguments: functionArguments } = functionCall;
+    const params = JSON.parse(functionArguments);
+    console.log("[Debug]", JSON.stringify(params));
+    const queryUrl = `https://dev-dot-recruit-u-f79a8.uc.r.appspot.com/api/lateral-recruiting?` + 
+        Object.entries(params)
+        .filter(([, value]) => value) // Ignore the key; filter based on the value
+        .map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`) // Encode values
+        .join('&');
+
+        // Call RecruitU's API
+        const recruitUResponse = await fetch(queryUrl, {
+            method: "GET",
+        });
+        if (!recruitUResponse.ok) {
+            throw new Error(`HTTP error! Status: ${recruitUResponse.status}`);
+        }
+
+    // Limit response
+    const data = await recruitUResponse.json();
+    const cleanedData = data.results
+    .slice(0, 5) // Limit to the first 5 entries
+        // .map((person : Person) => ({
+        //     id: person.id,
+        //     full_name: person.document.full_name,
+        //     email: person.document.email,
+        //     title: person.document.title,
+        //     linkedin: person.document.linkedin,
+        //     company_name: person.document.company_name,
+        //     school: person.document.school,
+        // }))
+        ;
+    console.log("[Debug]: cleaned data", cleanedData);
+    return cleanedData;
+}
+
+// Generate and stream Natural Language Response
+async function networkuResponse (chatHistory: Message[], prompt : string, openai: OpenAI){
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+        async start(controller) {
+            try {
+                const interpretedResponse = await openai.chat.completions.create({
+                    model: "gpt-4o",
+                    messages: [
+                    ...chatHistory, 
+                    { role: "user", 
+                        content: prompt, 
+                    },
+                    ],
+                    temperature: 0,
+                    stream: true,
+                });
+
+                for await (const part of interpretedResponse) {
+                    if (part.choices && part.choices[0]?.delta?.content) {
+                    const chunk = part.choices[0].delta.content;
+                    controller.enqueue(encoder.encode(chunk));
+                    await new Promise((resolve) =>
+                        setTimeout(resolve, Math.floor(Math.random() * 50) + 50),
+                    );
+                    }
+                }
+                controller.close();
+                } catch (error) {
+                console.error("Error during stream:", error);
+                controller.error("Streaming error occurred");
+                }
+        },
+    });
+
+    return new Response(stream, {
+    headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+    },
+    });
+}
+
 export async function POST(request: NextRequest) {
     const openai = new OpenAI({apiKey: process.env.OPENAI_API_KEY})
+    const configPath = path.resolve(process.cwd(), "configs/chat.yaml");
+    const config: Config = yaml.load(fs.readFileSync(configPath, "utf8")) as Config;
 
     try {
-        const { message, chatHistory } = await request.json();
-        console.log("[Debug]:", chatHistory);
+        const { chatHistory } = await request.json();
+        console.log("[Debug]:", JSON.stringify(chatHistory));
+        // Evaluate the user's message and classify it
         const initialResponse = await openai.chat.completions.create({
             model: 'gpt-4o-mini',
             messages: [
             ...chatHistory,
               {
                 role: 'system',
-                content: `You are NetworkU, a RecruitU tool designed to help students with networking for careers in Investment Banking and Consulting. 
-                Your responsibilities are:
-                1. Finding networking contacts based on user-provided information.
-                2. Assisting with cold email drafts for those contacts.
-                3. Answering questions about the networking process.
-                If a user asks for something outside these responsibilities, politely inform them you cannot assist.
-
-                If the user is looking for a networking contact, evaluate if the input data contains at least one of the following pieces of information for the person they are looking for: name, current company, sector, previous company, title, role, undergraduate school attended, undergraduate graduation year, or city. 
-                1. If at least one field is provided, return a JSON object with "validSearch": true. If none of these fields are present, return "validSearch": false.
-                2. Next, assess whether the user's question falls within the following criteria: it asks a clarifying question to one of your responses or ask for advice on the recruting process. If so, include "validHelp": true in the JSON object 
-                Otherwise, include "validHelp": false.
-                3. Additionally, provide a "reasoning" key in the JSON object that explains the logic behind your evaluations for both validSearch and validHelp.
-                Always return the result in a clear and well-formatted JSON structure.`,
+                content: config.systemPrompt,
               },
-              { role: 'user', content: `user message: ${message} and chat history: ${chatHistory} `},
+              { role: 'user', content: `chat history: ${JSON.stringify(chatHistory)} `},
             ], 
             temperature: 0,
             response_format: {
               type: "json_object",
             },
-          });
-          const responseContent = initialResponse.choices[0].message.content;
+        });
+        const responseContent = initialResponse.choices[0].message.content;
 
-
-        const jsonResponse = responseContent ? JSON.parse(responseContent) : ""; // Parse the JSON string
+        const jsonResponse = responseContent ? JSON.parse(responseContent) : "";
         console.log(jsonResponse);
-        if (jsonResponse.validHelp){
-            const encoder = new TextEncoder();
-            const stream = new ReadableStream({
-                async start(controller) {
-                  try {
-                    const interpretedResponse = await openai.chat.completions.create({
-                        model: "gpt-4o-mini",
-                        messages: [
-                        ...chatHistory, 
-                        { role: "user", 
-                            content: 
-                            `Please help the user with their request if it falls within your responsibilities.`, 
-                        },
-                        ],
-                        temperature: 0,
-                        stream: true,
-                    });
 
-                    for await (const part of interpretedResponse) {
-                        if (part.choices && part.choices[0]?.delta?.content) {
-                        const chunk = part.choices[0].delta.content;
-                        controller.enqueue(encoder.encode(chunk));
-                        // delay to simulate typing effect random from 50 to 100 ms
-                        await new Promise((resolve) =>
-                            setTimeout(resolve, Math.floor(Math.random() * 50) + 50),
-                        );
-                        }
-                    }
-                    controller.close();
-                    } catch (error) {
-                    console.error("Error during stream:", error);
-                    controller.error("Streaming error occurred");
-                    }
-                },
-                });
-    
-                return new Response(stream, {
-                headers: {
-                    "Content-Type": "text/event-stream",
-                    "Cache-Control": "no-cache",
-                    Connection: "keep-alive",
-                },
-                });
-        } 
-        if (!jsonResponse.validSearch){
-            const encoder = new TextEncoder();
-            const stream = new ReadableStream({
-                async start(controller) {
-                  try {
-                    const interpretedResponse = await openai.chat.completions.create({
-                        model: "gpt-4o-mini",
-                        messages: [
-                        ...chatHistory, 
-                        { role: "user", 
-                            content: 
-                            `Please ask the user to ask you a question within your responsibilities.`, 
-                        },
-                        ],
-                        temperature: 0,
-                        stream: true,
-                    });
-
-                    for await (const part of interpretedResponse) {
-                        if (part.choices && part.choices[0]?.delta?.content) {
-                        const chunk = part.choices[0].delta.content;
-                        controller.enqueue(encoder.encode(chunk));
-                        // delay to simulate typing effect random from 50 to 100 ms
-                        await new Promise((resolve) =>
-                            setTimeout(resolve, Math.floor(Math.random() * 50) + 50),
-                        );
-                        }
-                    }
-                    controller.close();
-                    } catch (error) {
-                    console.error("Error during stream:", error);
-                    controller.error("Streaming error occurred");
-                    }
-                },
-                });
-    
-                return new Response(stream, {
-                headers: {
-                    "Content-Type": "text/event-stream",
-                    "Cache-Control": "no-cache",
-                    Connection: "keep-alive",
-                },
-                });
-        } 
-        const response = await openai.chat.completions.create({
-            model: 'gpt-4o-mini', // Model supporting function calling
-            messages: [
-            ...chatHistory,
-              {
-                role: 'system',
-                content: `Using the user's messages in the chat history, find the necessary information in their queries to find people they can speak to.`,
-              },
-              { role: 'user', content: `user message: ${message} and chat history: ${chatHistory} `},
-            ],
-            functions: functions,
-            function_call: 'auto', // Let the model decide when to call a function
-          });
-
-          const functionCall = response.choices[0].message?.function_call;
-
-          if (!functionCall) {
-            return NextResponse.json({
-              error: "No function call was generated. Unable to process the request.",
-            });
-          }
-          const { arguments: functionArguments } = functionCall;
-          const params = JSON.parse(functionArguments);
-          console.log("[Debug]", JSON.stringify(params));
-          const queryUrl = `https://dev-dot-recruit-u-f79a8.uc.r.appspot.com/api/lateral-recruiting?` + 
-            Object.entries(params)
-            .filter(([, value]) => value) // Ignore the key; filter based on the value
-            .map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`) // Encode values
-            .join('&');
-
-            const recruitUResponse = await fetch(queryUrl, {
-                method: "GET",
-              });
-              // Check if the response is ok
-              if (!recruitUResponse.ok) {
-                throw new Error(`HTTP error! Status: ${recruitUResponse.status}`);
-              }
-          
-            const data = await recruitUResponse.json();
-            const cleanedData = data.results
-            .slice(0, 5) // Limit to the first 5 entries
-            .map((person : Person) => ({
-                id: person.id,
-                full_name: person.document.full_name,
-                email: person.document.email,
-                title: person.document.title,
-                linkedin: person.document.linkedin,
-                company_name: person.document.company_name,
-                school: person.document.school,
-            }));
-            console.log("[Debug] Cleaned Data:", cleanedData);
-            const encoder = new TextEncoder();
-            const stream = new ReadableStream({
-                async start(controller) {
-                  try {
-                    const interpretedResponse = await openai.chat.completions.create({
-                        model: "gpt-4o-mini",
-                        messages: [
-                        ...chatHistory, 
-                        { role: "system", 
-                            content:
-                            `Here is contact information from RecruitU's database:${JSON.stringify(cleanedData)}.
-                            1. If the contact information is empty, please apologize to the user about not having a contact and ask if you can help in another way.
-                            2. If it is not empty, interpret it in a concise manner in the context of the chat. 
-                            3. Please also provide support according to what the user asked for in the chat.
-                            Keep your response brief and ask the user if they need help reaching out.`, 
-                        },
-                        ],
-                        temperature: 0,
-                        stream: true,
-                    });
-
-                    for await (const part of interpretedResponse) {
-                        if (part.choices && part.choices[0]?.delta?.content) {
-                        const chunk = part.choices[0].delta.content;
-                        controller.enqueue(encoder.encode(chunk));
-                        // delay to simulate typing effect random from 50 to 100 ms
-                        await new Promise((resolve) =>
-                            setTimeout(resolve, Math.floor(Math.random() * 50) + 50),
-                        );
-                        }
-                    }
-                    controller.close();
-                    } catch (error) {
-                    console.error("Error during stream:", error);
-                    controller.error("Streaming error occurred");
-                    }
-                },
-                });
-    
-                return new Response(stream, {
-                headers: {
-                    "Content-Type": "text/event-stream",
-                    "Cache-Control": "no-cache",
-                    Connection: "keep-alive",
-                },
-                });
+        // Address non-valid messages
+        if (!jsonResponse.isValid){
+            return networkuResponse(chatHistory, config.reprompt, openai);
+        }
+        // Address clarifying questions
+        if(jsonResponse.isClarifying){
+            if(jsonResponse.isGeneral){
+                return networkuResponse(chatHistory, config.clarifyingQuestionPrompt + config.generalQuestionPrompt, openai);
+            } else if (jsonResponse.isColdEmail){
+                return networkuResponse(chatHistory, config.clarifyingQuestionPrompt + config.coldEmailQuestionPrompt, openai);
+            } else if (jsonResponse.isSearch){
+                return networkuResponse(chatHistory, config.clarifyingQuestionPrompt + config.searchPrompt, openai);
+            } else return networkuResponse(chatHistory, config.clarifyingQuestionPrompt, openai);
+        } else {
+            // Address new questions
+            if(jsonResponse.isGeneral){
+                return networkuResponse(chatHistory, config.generalQuestionPrompt, openai);
+            }
+            if(jsonResponse.isColdEmail){
+                const contacts = await getContacts(chatHistory, openai);
+                const prompt = JSON.stringify(contacts) + config.coldEmailQuestionPrompt;
+                return networkuResponse(chatHistory, prompt, openai);
+            }
+            if(jsonResponse.isSearch){
+                const contacts = await getContacts(chatHistory, openai);
+                console.log("[Debug]: contacts", contacts);
+                const prompt = `Contact information: ${JSON.stringify(contacts)} ${config.searchPrompt}`;
+                return networkuResponse(chatHistory, prompt, openai);
+            }
+            else return networkuResponse(chatHistory, "Appropriately help the user.", openai);
+        }
+        
             } catch (error) {
                 console.error("Error processing chat request:", error);
                 return NextResponse.json(
