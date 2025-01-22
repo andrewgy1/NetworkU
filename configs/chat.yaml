@@ -55,7 +55,7 @@ clarifyingQuestionPrompt: |
   Please support the user in the context of the conversation. Make sure your answer builds on prior interactions and remains consistent. 
 
 generalQuestionPrompt: |
-  Please answer the user's question about the Investment Banking and Consulting networking process using the following information:
+  Please answer the user's question about the Investment Banking and Consulting networking process using the following information (DO NOT USE OUTSIDE INFORMATION LIKE THE INTERNET):
 
   Is networking scary?:
   If the early banking recruiting timelines weren’t enough to

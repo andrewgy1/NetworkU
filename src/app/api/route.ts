@@ -76,45 +76,45 @@ interface Document {
 // Functions for OpenAI function call
 const functions = [{
     name: "fetch_recruitu_data",
-    description: "retrieve contacts from RecruitU's database of contacts",
+    description: "retrieve contacts from RecruitU's database of contacts for the user based on their target contact",
     parameters: {
         type: "object",
         properties: {
             name: {
                 type: "string",
-                description: "Name of a user. This does a partial match to the user’s full name, so you can specify just their first name, just their last name, or both",
+                description: "Name of the user's ideal contact. This does a partial match to the user’s full name, so you can specify just their first name, just their last name, or both",
             },
             current_company: {
                 type: "string",
-                description: "Name of the current company for a user",
+                description: "Name of the current company for the user's ideal contact",
             },
             sector: {
                 type: "string",
-                description: "The sector the user is in and matches for either CONSULTING or FINANCE"
+                description: "The sector the user or the user's ideal contact is in and matches for either CONSULTING or FINANCE"
             },
             previous_company: {
                 type: "string",
-                description : "The name of the previous company for a user"
+                description : "The name of the previous company for a user or the user's ideal contact"
             },
             title: {
                 type: "string",
-                description : "The title of the user (i.e., Associate, Vice President, etc.)"
+                description : "The title of the user's ideal contact (i.e., Associate, Vice President, etc.)"
             },
             role: {
                 type: "string",
-                description: "The role that the user has now or has had in the past."
+                description: "The role that the user or the user's ideal contact has now or has had in the past."
             },
             school: {
                 type: "string",
-                description: "The school of the user"
+                description: "The school of the user or the user's ideal contact"
             },
             undergraduate_year: {
                 type: "number",
-                description: "The graduation year for the user for their respective undergraduate degree"
+                description: "The graduation year for the user's ideal contact for their respective undergraduate degree"
             },
             city: {
                 type: "string",
-                description: "The city of the user"
+                description: "The city of the user or the user's ideal contact"
             }
         }
     }
@@ -129,7 +129,7 @@ async function getContacts(chatHistory: Message[], openai: OpenAI){
         ...chatHistory,
         {
             role: 'system',
-            content: `Using the user's messages in the chat history, find the information in their queries to find people they can speak to. There will be enough information.`,
+            content: `Find the information in the user's messages to find people they can speak to.`,
         },
         { role: 'user', content: `chat history: ${JSON.stringify(chatHistory)} `},
         ],
@@ -188,7 +188,7 @@ async function networkuResponse (chatHistory: Message[], prompt : string, openai
         async start(controller) {
             try {
                 const interpretedResponse = await openai.chat.completions.create({
-                    model: "gpt-4o",
+                    model: "gpt-4o-mini",
                     messages: [
                     ...chatHistory, 
                     { role: "user", 
