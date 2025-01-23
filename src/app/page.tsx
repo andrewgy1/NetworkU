@@ -13,19 +13,17 @@ export type Message = {
   content: string;
 };
 
-
 export default function Home() {
   const [chatHistory, setChatHistory] = useState<Message[]>([
     {
       role: "system",
-      content: "Hi! I am NetworkU, a tool by RecruitU to help you network with Investment Banking and Consulting professionals. Tell me about yourself, and I can connect you with the right people to coffee chat and suggest cold emails ideas!",
+      content: "Hi! I am NetworkU, a tool by RecruitU to help you network with Investment Banking and Consulting professionals. I can connect you with the right people to coffee chat, suggest cold emails ideas, or answer questions about the networking process!",
     },
   ]);
   const [inputValue, setInputValue] = useState('');
   const [showChat, setShowChat] = useState(false); 
-  // const [isStreaming, setIsStreaming] = useState(false);
-
-
+  const [isLoading, setIsLoading] = useState(false);
+  // Show chat after logo animation finishes
   useEffect(() => {
     const chatTimer = setTimeout(() => {
       setShowChat(true);
@@ -42,6 +40,7 @@ export default function Home() {
       const updatedChatHistory: Message[] = [...chatHistory, { role: 'user', content: inputValue }];
       setChatHistory(updatedChatHistory);
       setInputValue('');
+      setIsLoading(true);
       console.log("[Debug] Frontend Chat History:", JSON.stringify(updatedChatHistory));
 
       try {
@@ -57,43 +56,42 @@ export default function Home() {
         if (!response.body) {
           throw new Error('Response body is null');
         }
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let streamedContent = '';
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let streamedContent = '';
+        setIsLoading(false);
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-  
-            const chunk = decoder.decode(value);
-            streamedContent += chunk;
-  
-            // Update the chat as the stream progresses
-            setChatHistory((prev) => {
-              // Replace or append the streaming message dynamically
-              const lastMessage = prev[prev.length - 1];
-              if (lastMessage && lastMessage.role === 'system') {
-                // Update the last system message
-                return [
-                  ...prev.slice(0, -1),
-                  { role: 'system', content: streamedContent },
-                ];
-              } else {
-                // Add a new system message
-                return [...prev, { role: 'system', content: streamedContent }];
-              }
-            });
-          }
-        } catch (error) {
-          console.error('Error making API call:', error);
-          setChatHistory((prev) => [
-            ...prev,
-            { role: 'system', content: "Sorry, I couldn't connect to the server." },
-          ]);
-        } finally {
+          const chunk = decoder.decode(value);
+          streamedContent += chunk;
+
+          // Update the chat as the stream progresses
+          setChatHistory((prev) => {
+            // Replace or append the streaming message dynamically
+            const lastMessage = prev[prev.length - 1];
+            if (lastMessage && lastMessage.role === 'system') {
+              // Update the last system message
+              return [
+                ...prev.slice(0, -1),
+                { role: 'system', content: streamedContent },
+              ];
+            } else {
+              // Add a new system message
+              return [...prev, { role: 'system', content: streamedContent }];
+            }
+          });
         }
+      } catch (error) {
+        console.error('Error making API call:', error);
+        setChatHistory((prev) => [
+          ...prev,
+          { role: 'system', content: "Sorry, I couldn't connect to the server." },
+        ]);
       }
-    };    
+    }
+  };    
  return (
   <>
       {!showChat ? (
@@ -129,6 +127,19 @@ export default function Home() {
                   </div>
                 </div>
               ))}
+              {isLoading && (
+                <div className="chat chat-start">
+                  <div
+                    className="chat-bubble bg-recruituBlue text-white flex justify-center items-center"
+                    style={{
+                      minHeight: '40px',
+                      maxWidth: '90%',
+                    }}
+                  >
+                    <span className="loading loading-dots loading-sm"></span>
+                  </div>
+                </div>
+              )}
             </div>
             {/* Input box */}
             <div className="border-t bg-white p-3 flex items-center">

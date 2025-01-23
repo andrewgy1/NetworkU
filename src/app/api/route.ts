@@ -5,6 +5,7 @@ import fs from "fs";
 import path from "path";
 import { Message } from '../page'; 
 
+// Prompts for OpenAI API calls
 interface Config {
     systemPrompt: string
     reprompt: string
@@ -13,70 +14,11 @@ interface Config {
     clarifyingQuestionPrompt: string
     generalQuestionPrompt: string
 }
-interface Person{
-    id: number,
-    document: Document
-}
-interface Document {
-    id: string
-    last_name: string
-    created_at: string
-    source: string
-    linkedin: string
-    title: string
-    alumni: boolean
-    phone: string
-    company_name: string
-    grade: string
-    club_id: string
-    first_name: string
-    email: string
-    school: string
-    full_name: string
-    country: string
-    city: string
-    previous_companies: string
-    undergrad?: Undergrad
-    current_company: CurrentCompany
-    profile_pic_url: string
-    previous_titles: string
-  }
-  interface Undergrad {
-    school_facebook_profile_url: string,
-    starts_at?: Date,
-    school: string,
-    degree_name?: string,
-    logo_url: string,
-    grade: string | number,
-    activities_and_societies: string,
-    description: string,
-    ends_at?: string | Date | number,
-    school_linkedin_profile_url?: string,
-    field_of_study?: string
-  }
-  
-  interface CurrentCompany {
-    starts_at?: Date
-    company_facebook_profile_url: string
-    logo_url: string
-    company_linkedin_profile_url?: string
-    description?: string
-    location?: string
-    company: string
-    ends_at?: Date
-    title: string
-  }
-  
-  export interface Date {
-    month: number
-    year: number
-    day: number
-  }
 
 // Functions for OpenAI function call
 const functions = [{
     name: "fetch_recruitu_data",
-    description: "retrieve contacts from RecruitU's database of contacts for the user based on their target contact",
+    description: "Retrieve contacts from RecruitU's database of contacts for the user to either give them contacts to network with or give them more information about",
     parameters: {
         type: "object",
         properties: {
@@ -106,7 +48,7 @@ const functions = [{
             },
             school: {
                 type: "string",
-                description: "The school of the user or the user's ideal contact"
+                description: "The undergraduate university or college of the user or the user's ideal contact"
             },
             undergraduate_year: {
                 type: "number",
@@ -120,65 +62,127 @@ const functions = [{
     }
 }]
 
+// Formatting API data
+type Result = {
+    id: string
+    document: Document
+}
+  
+interface Document {
+    id: string
+    last_name: string
+    created_at: string
+    source: string
+    linkedin: string
+    title: string
+    alumni: boolean
+    phone: string
+    company_name: string
+    grade: string
+    club_id: string
+    first_name: string
+    email: string
+    school: string
+    full_name: string
+    country: string
+    city: string
+    previous_companies: string 
+    undergrad?: Undergrad
+    current_company: CurrentCompany
+    profile_pic_url: string
+    previous_titles: string
+}
+  
+interface Undergrad {
+    starts_at?: Date
+    school: string
+    degree_name?: string
+    activities_and_societies: string [] | string | null
+    description: string | null
+    ends_at?: Date
+    field_of_study?: string
+}
+  
+interface CurrentCompany {
+    starts_at?: Date
+    logo_url: string
+    description?: string
+    location?: string
+    company: string
+    ends_at?: Date
+    title: string
+}
+  
+interface Date {
+    month: number
+    year: number
+    day: number
+}
+
 // Makes OpenAI function call, queries RecruitU API, and returns contact data
 async function getContacts(chatHistory: Message[], openai: OpenAI){
     console.log(JSON.stringify(chatHistory));
     const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'gpt-4o',
         messages: [
         ...chatHistory,
         {
             role: 'system',
-            content: `Find the information in the user's messages to find people they can speak to.`,
+            content: `Find the information in the user's messages to find them networking contacts for the user.
+            Always use one of the provided functions to respond to the user's message.`,
         },
         { role: 'user', content: `chat history: ${JSON.stringify(chatHistory)} `},
         ],
         functions: functions,
-        // function_call: 'auto', // Let the model decide when to call a function
+        function_call: 'auto',
     });
     console.log("[Debug]: OpenAI Response", JSON.stringify(response, null, 2));
     const functionCall = response.choices[0].message?.function_call;
     console.log("[Debug]: functionCall", functionCall);
     if (!functionCall) {
         return NextResponse.json({
-        error: "No function call was generated. Unable to process the request.",
+            error: "No function call was generated. Unable to process the request.",
         });
     }
 
     // Create URL to query RecruitU's API
-    const { arguments: functionArguments } = functionCall;
-    const params = JSON.parse(functionArguments);
-    console.log("[Debug]", JSON.stringify(params));
+    // const { arguments: functionArguments } = functionCall;
+    const functionCallArguments = functionCall.arguments;
+    const params = JSON.parse(functionCallArguments);
     const queryUrl = `https://dev-dot-recruit-u-f79a8.uc.r.appspot.com/api/lateral-recruiting?` + 
         Object.entries(params)
-        .filter(([, value]) => value) // Ignore the key; filter based on the value
-        .map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`) // Encode values
+        .filter(([, value]) => value) 
+        .map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`) 
         .join('&');
 
         // Call RecruitU's API
-        const recruitUResponse = await fetch(queryUrl, {
-            method: "GET",
-        });
+        const recruitUResponse = await fetch(queryUrl, {method: "GET"});
         if (!recruitUResponse.ok) {
             throw new Error(`HTTP error! Status: ${recruitUResponse.status}`);
         }
 
-    // Limit response
+    // Formate API data for NLP interpretation
     const data = await recruitUResponse.json();
-    const cleanedData = data.results
-    .slice(0, 5) // Limit to the first 5 entries
-        // .map((person : Person) => ({
-        //     id: person.id,
-        //     full_name: person.document.full_name,
-        //     email: person.document.email,
-        //     title: person.document.title,
-        //     linkedin: person.document.linkedin,
-        //     company_name: person.document.company_name,
-        //     school: person.document.school,
-        // }))
-        ;
-    console.log("[Debug]: cleaned data", cleanedData);
-    return cleanedData;
+    const slicedData = data.results.slice(0, 3);
+    const formattedData = JSON.stringify(slicedData.map((result : Result) => `
+        Full name: ${result.document.full_name},
+        City: ${result.document.city},
+        Current Company: ${result.document.current_company?.company},
+        Current title/role: ${result.document.title},
+        Undergraduate university/college: ${result.document.school},
+        Email: ${result.document.email},
+        LinkedIn: ${result.document.linkedin},
+        Previous Companies (may include undergraduate organizations): ${result.document.previous_companies},
+        Previous Titles: ${result.document.previous_titles},
+        Education: 
+            Name: ${result.document.undergrad?.school},
+            Graduation Year/Class Year: ${result.document.undergrad?.ends_at?.year},
+            Major/Field of Study: ${result.document.undergrad?.field_of_study},
+            Activities: ${result.document.undergrad?.activities_and_societies},
+            Description (may include coursework or activities): ${result.document.undergrad?.description}`).join('| Next Contact: '));
+
+    console.log("[Debug]: Cleaned Data", formattedData);
+    return formattedData;
 }
 
 // Generate and stream Natural Language Response
@@ -233,65 +237,75 @@ export async function POST(request: NextRequest) {
     try {
         const { chatHistory } = await request.json();
         console.log("[Debug]:", JSON.stringify(chatHistory));
+
         // Evaluate the user's message and classify it
-        const initialResponse = await openai.chat.completions.create({
-            model: 'gpt-4o-mini',
+        const classification = await openai.chat.completions.create({
+            model: 'gpt-4o',
             messages: [
             ...chatHistory,
               {
                 role: 'system',
                 content: config.systemPrompt,
               },
-              { role: 'user', content: `chat history: ${JSON.stringify(chatHistory)} `},
             ], 
             temperature: 0,
             response_format: {
               type: "json_object",
             },
         });
-        const responseContent = initialResponse.choices[0].message.content;
-
-        const jsonResponse = responseContent ? JSON.parse(responseContent) : "";
-        console.log(jsonResponse);
+        const classificationContent = classification.choices[0].message.content;
+        const classificationResponse = classificationContent ? JSON.parse(classificationContent) : "";
+        console.log(classificationResponse);
 
         // Address non-valid messages
-        if (!jsonResponse.isValid){
+        if (!classificationResponse.isValid){
             return networkuResponse(chatHistory, config.reprompt, openai);
         }
+
         // Address clarifying questions
-        if(jsonResponse.isClarifying){
-            if(jsonResponse.isGeneral){
+        if(classificationResponse.isClarifying){
+            if(classificationResponse.isGeneral){
                 return networkuResponse(chatHistory, config.clarifyingQuestionPrompt + config.generalQuestionPrompt, openai);
-            } else if (jsonResponse.isColdEmail){
+            } else if (classificationResponse.isColdEmail){
                 return networkuResponse(chatHistory, config.clarifyingQuestionPrompt + config.coldEmailQuestionPrompt, openai);
-            } else if (jsonResponse.isSearch){
-                return networkuResponse(chatHistory, config.clarifyingQuestionPrompt + config.searchPrompt, openai);
-            } else return networkuResponse(chatHistory, config.clarifyingQuestionPrompt, openai);
+            } else if (classificationResponse.isSearch){
+                const prompt = 
+                    `Contact Information: ${await getContacts(chatHistory, openai)} 
+                    Instructions: ${config.clarifyingQuestionPrompt} 
+                    ${config.searchPrompt}`;
+                console.log("[Debug] isClarifyingSearch Prompt:", prompt);
+                return networkuResponse(chatHistory, prompt, openai);
+            } else {
+                console.log("[Debug] isClarifying Prompt");
+                return networkuResponse(chatHistory, config.clarifyingQuestionPrompt, openai);
+            }
         } else {
             // Address new questions
-            if(jsonResponse.isGeneral){
+            if(classificationResponse.isGeneral){
                 return networkuResponse(chatHistory, config.generalQuestionPrompt, openai);
             }
-            if(jsonResponse.isColdEmail){
+            if(classificationResponse.isColdEmail){
                 const contacts = await getContacts(chatHistory, openai);
                 const prompt = JSON.stringify(contacts) + config.coldEmailQuestionPrompt;
                 return networkuResponse(chatHistory, prompt, openai);
             }
-            if(jsonResponse.isSearch){
+            if(classificationResponse.isSearch){
                 const contacts = await getContacts(chatHistory, openai);
                 console.log("[Debug]: contacts", contacts);
-                const prompt = `Contact information: ${JSON.stringify(contacts)} ${config.searchPrompt}`;
+                const prompt = 
+                    `Contact Information: ${contacts} 
+                    ${config.searchPrompt}`;
                 return networkuResponse(chatHistory, prompt, openai);
             }
             else return networkuResponse(chatHistory, "Appropriately help the user.", openai);
         }
         
-            } catch (error) {
-                console.error("Error processing chat request:", error);
-                return NextResponse.json(
-                { error: "Internal server error" },
-                { status: 500 },
-                );
-            }
+    } catch (error) {
+        console.error("Error processing chat request:", error);
+        return NextResponse.json(
+        { error: "Internal server error" },
+        { status: 500 },
+        );
+    }
 }
     
