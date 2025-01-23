@@ -200,8 +200,7 @@ async function networkuResponse (chatHistory: Message[], prompt : string, openai
                     const chunk = part.choices[0].delta.content;
                     controller.enqueue(encoder.encode(chunk));
                     await new Promise((resolve) =>
-                        setTimeout(resolve, Math.floor(Math.random() * 50) + 50),
-                    );
+                        setTimeout(resolve, 20));
                     }
                 }
                 controller.close();
