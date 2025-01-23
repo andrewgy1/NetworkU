@@ -10,6 +10,7 @@ interface Config {
     systemPrompt: string
     reprompt: string
     searchPrompt: string
+    getContactsPrompt: string
     coldEmailQuestionPrompt: string
     clarifyingQuestionPrompt: string
     generalQuestionPrompt: string
@@ -24,7 +25,7 @@ const functions = [{
         properties: {
             name: {
                 type: "string",
-                description: "Name of the user's ideal contact. This does a partial match to the user’s full name, so you can specify just their first name, just their last name, or both",
+                description: "The name of the user's ideal contact. Performs a partial match against the contact's full name (e.g., first name, last name, or both). If multiple names are mentioned in the chat history and the intended contact is unclear, leave this field blank to avoid ambiguity.",
             },
             current_company: {
                 type: "string",
@@ -120,15 +121,14 @@ interface Date {
 }
 
 // Makes OpenAI function call, queries RecruitU API, and returns contact data
-async function getContacts(chatHistory: Message[], openai: OpenAI){
+async function getContacts(prompt: string, chatHistory: Message[], openai: OpenAI){
     const response = await openai.chat.completions.create({
         model: 'gpt-4o',
         messages: [
         ...chatHistory,
         {
             role: 'system',
-            content: `Find the information in the user's messages to find them networking contacts for the user.
-            Always use one of the provided functions to respond to the user's message.`,
+            content: prompt,
         }],
         functions: functions,
         function_call: 'auto',
@@ -143,6 +143,7 @@ async function getContacts(chatHistory: Message[], openai: OpenAI){
     // Create URL to query RecruitU's API
     const functionCallArguments = functionCall.arguments;
     const params = JSON.parse(functionCallArguments);
+    console.log(params);
     const queryUrl = `https://dev-dot-recruit-u-f79a8.uc.r.appspot.com/api/lateral-recruiting?` + 
         Object.entries(params)
         .filter(([, value]) => value) 
@@ -257,7 +258,7 @@ export async function POST(request: NextRequest) {
                 return networkuResponse(chatHistory, config.clarifyingQuestionPrompt + config.coldEmailQuestionPrompt, openai);
             } else if (classificationResponse.isSearch){
                 const prompt = 
-                    `Contact Information: ${await getContacts(chatHistory, openai)} 
+                    `Contact Information: ${await getContacts(config.getContactsPrompt, chatHistory, openai)} 
                     Instructions: ${config.clarifyingQuestionPrompt} 
                     ${config.searchPrompt}`;
                 return networkuResponse(chatHistory, prompt, openai);
@@ -270,12 +271,12 @@ export async function POST(request: NextRequest) {
                 return networkuResponse(chatHistory, config.generalQuestionPrompt, openai);
             }
             if(classificationResponse.isColdEmail){
-                const contacts = await getContacts(chatHistory, openai);
+                const contacts = await getContacts(config.getContactsPrompt, chatHistory, openai);
                 const prompt = JSON.stringify(contacts) + config.coldEmailQuestionPrompt;
                 return networkuResponse(chatHistory, prompt, openai);
             }
             if(classificationResponse.isSearch){
-                const contacts = await getContacts(chatHistory, openai);
+                const contacts = await getContacts(config.getContactsPrompt, chatHistory, openai);
                 const prompt = 
                     `Contact Information: ${contacts} 
                     ${config.searchPrompt}`;

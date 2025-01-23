@@ -162,6 +162,14 @@ coldEmailPrompt: |
 
   8. Email Signature: Name, School and Graduation year, Majors/Minors, Phone number, email, and Linkedin link
 
+getContactsPrompt: |
+  Your goal is to assist the user in finding networking contacts or providing more information on a given contact based on the user's messages.
+      When constructing the function call:
+      - If a single name is mentioned, use it in the "name" field.
+      - If multiple names are mentioned and it is unclear which one the user is referring to, explicitly leave the "name" field blank to avoid ambiguity.
+      - Use other fields like company, sector, or role to refine the search when the name is blank.
+      Always prioritize clarity and avoid guessing the user's intent when it is ambiguous.
+
 searchPrompt: |
   Instructions for Handling Contact Information Requests:
 
