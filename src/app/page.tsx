@@ -17,7 +17,7 @@ export default function Home() {
   const [chatHistory, setChatHistory] = useState<Message[]>([
     {
       role: "system",
-      content: "Hi! I am NetworkU, a tool by RecruitU to help you network with Investment Banking and Consulting professionals. I can connect you with the right people to coffee chat, suggest cold email ideas, or answer questions about the networking process!",
+      content: `Hi! I'm NetworkU, your ultimate networking assistant powered by RecruitU. I specialize in connecting you with professionals in Investment Banking and Consulting. Whether you’re looking for the right people to schedule coffee chats with, need help crafting effective cold emails, or have questions about the networking process, I’m here to guide you every step of the way!`,
     },
   ]);
   const [inputValue, setInputValue] = useState('');

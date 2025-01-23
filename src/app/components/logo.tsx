@@ -34,7 +34,7 @@ export default function Logo() {
         <div className="h-16 flex items-center justify-center">
         {showByRecruitU && (
           <Image
-          src="/byRecruitU.png"
+          src="/recruitUText.png"
           alt=""
           width="200"
           height="200"

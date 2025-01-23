@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "NetworkU by RecruitU",
+  title: "NetworkU, a RecruitU tool",
   description: "A networking tool by RecruitU",
 };
 
