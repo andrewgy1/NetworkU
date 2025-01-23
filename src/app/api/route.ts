@@ -129,9 +129,7 @@ async function getContacts(chatHistory: Message[], openai: OpenAI){
             role: 'system',
             content: `Find the information in the user's messages to find them networking contacts for the user.
             Always use one of the provided functions to respond to the user's message.`,
-        },
-        { role: 'user', content: `chat history: ${JSON.stringify(chatHistory)} `},
-        ],
+        }],
         functions: functions,
         function_call: 'auto',
     });
@@ -159,7 +157,7 @@ async function getContacts(chatHistory: Message[], openai: OpenAI){
 
     // Formate API data for natural language interpretation
     const data = await recruitUResponse.json();
-    const slicedData = data.results.slice(0, 3);
+    const slicedData = data.results.slice(0, 5);
     const formattedData = JSON.stringify(slicedData.map((result : Result) => `
         Full name: ${result.document.full_name},
         City: ${result.document.city},
