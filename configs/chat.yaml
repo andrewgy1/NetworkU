@@ -9,7 +9,8 @@ systemPrompt: |
 
   Your Task:
 
-  Step 1. Analyze the user's messages in the context of the entire chat history. Set isFollowUp = true if the user is asking a question about a contact you have provided. Otherwise, set isFollowUp = false.
+  Step 1. 
+    Analyze the user's messages in the context of the entire chat history. Set isFollowUp = true if the user is asking a question about a contact you have provided. Otherwise, set isFollowUp = false.
 
   Step 2. Evaluate for isValid:
     Set isValid = true if the user’s message:

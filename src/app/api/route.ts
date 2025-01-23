@@ -62,7 +62,7 @@ const functions = [{
     }
 }]
 
-// Formatting API data
+// Formatting and Accessing RecruitU API call data
 type Result = {
     id: string
     document: Document
@@ -121,7 +121,6 @@ interface Date {
 
 // Makes OpenAI function call, queries RecruitU API, and returns contact data
 async function getContacts(chatHistory: Message[], openai: OpenAI){
-    console.log(JSON.stringify(chatHistory));
     const response = await openai.chat.completions.create({
         model: 'gpt-4o',
         messages: [
@@ -136,9 +135,7 @@ async function getContacts(chatHistory: Message[], openai: OpenAI){
         functions: functions,
         function_call: 'auto',
     });
-    console.log("[Debug]: OpenAI Response", JSON.stringify(response, null, 2));
     const functionCall = response.choices[0].message?.function_call;
-    console.log("[Debug]: functionCall", functionCall);
     if (!functionCall) {
         return NextResponse.json({
             error: "No function call was generated. Unable to process the request.",
@@ -146,7 +143,6 @@ async function getContacts(chatHistory: Message[], openai: OpenAI){
     }
 
     // Create URL to query RecruitU's API
-    // const { arguments: functionArguments } = functionCall;
     const functionCallArguments = functionCall.arguments;
     const params = JSON.parse(functionCallArguments);
     const queryUrl = `https://dev-dot-recruit-u-f79a8.uc.r.appspot.com/api/lateral-recruiting?` + 
@@ -156,12 +152,12 @@ async function getContacts(chatHistory: Message[], openai: OpenAI){
         .join('&');
 
         // Call RecruitU's API
-        const recruitUResponse = await fetch(queryUrl, {method: "GET"});
-        if (!recruitUResponse.ok) {
-            throw new Error(`HTTP error! Status: ${recruitUResponse.status}`);
-        }
+    const recruitUResponse = await fetch(queryUrl, {method: "GET"});
+    if (!recruitUResponse.ok) {
+        throw new Error(`HTTP error! Status: ${recruitUResponse.status}`);
+    }
 
-    // Formate API data for NLP interpretation
+    // Formate API data for natural language interpretation
     const data = await recruitUResponse.json();
     const slicedData = data.results.slice(0, 3);
     const formattedData = JSON.stringify(slicedData.map((result : Result) => `
@@ -180,8 +176,6 @@ async function getContacts(chatHistory: Message[], openai: OpenAI){
             Major/Field of Study: ${result.document.undergrad?.field_of_study},
             Activities: ${result.document.undergrad?.activities_and_societies},
             Description (may include coursework or activities): ${result.document.undergrad?.description}`).join('| Next Contact: '));
-
-    console.log("[Debug]: Cleaned Data", formattedData);
     return formattedData;
 }
 
@@ -219,13 +213,12 @@ async function networkuResponse (chatHistory: Message[], prompt : string, openai
                 }
         },
     });
-
     return new Response(stream, {
-    headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-    },
+        headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+        },
     });
 }
 
@@ -233,10 +226,8 @@ export async function POST(request: NextRequest) {
     const openai = new OpenAI({apiKey: process.env.OPENAI_API_KEY})
     const configPath = path.resolve(process.cwd(), "configs/chat.yaml");
     const config: Config = yaml.load(fs.readFileSync(configPath, "utf8")) as Config;
-
     try {
         const { chatHistory } = await request.json();
-        console.log("[Debug]:", JSON.stringify(chatHistory));
 
         // Evaluate the user's message and classify it
         const classification = await openai.chat.completions.create({
@@ -255,7 +246,6 @@ export async function POST(request: NextRequest) {
         });
         const classificationContent = classification.choices[0].message.content;
         const classificationResponse = classificationContent ? JSON.parse(classificationContent) : "";
-        console.log(classificationResponse);
 
         // Address non-valid messages
         if (!classificationResponse.isValid){
@@ -273,10 +263,8 @@ export async function POST(request: NextRequest) {
                     `Contact Information: ${await getContacts(chatHistory, openai)} 
                     Instructions: ${config.clarifyingQuestionPrompt} 
                     ${config.searchPrompt}`;
-                console.log("[Debug] isClarifyingSearch Prompt:", prompt);
                 return networkuResponse(chatHistory, prompt, openai);
             } else {
-                console.log("[Debug] isClarifying Prompt");
                 return networkuResponse(chatHistory, config.clarifyingQuestionPrompt, openai);
             }
         } else {
@@ -291,7 +279,6 @@ export async function POST(request: NextRequest) {
             }
             if(classificationResponse.isSearch){
                 const contacts = await getContacts(chatHistory, openai);
-                console.log("[Debug]: contacts", contacts);
                 const prompt = 
                     `Contact Information: ${contacts} 
                     ${config.searchPrompt}`;

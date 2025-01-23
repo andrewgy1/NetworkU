@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Image from "next/image";
 import Logo from "./components/logo";
 import Header from './components/header';
@@ -17,12 +17,22 @@ export default function Home() {
   const [chatHistory, setChatHistory] = useState<Message[]>([
     {
       role: "system",
-      content: "Hi! I am NetworkU, a tool by RecruitU to help you network with Investment Banking and Consulting professionals. I can connect you with the right people to coffee chat, suggest cold emails ideas, or answer questions about the networking process!",
+      content: "Hi! I am NetworkU, a tool by RecruitU to help you network with Investment Banking and Consulting professionals. I can connect you with the right people to coffee chat, suggest cold email ideas, or answer questions about the networking process!",
     },
   ]);
   const [inputValue, setInputValue] = useState('');
   const [showChat, setShowChat] = useState(false); 
   const [isLoading, setIsLoading] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+    // Scroll to the bottom of the chat when chatHistory changes
+    useEffect(() => {
+      if (chatContainerRef.current) {
+        chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      }
+    }, [chatHistory]);
+
   // Show chat after logo animation finishes
   useEffect(() => {
     const chatTimer = setTimeout(() => {
@@ -34,15 +44,14 @@ export default function Home() {
     };
   }, []);
 
+  // Handle user sending messages
   const handleSend = async () => {
-    console.log("test");
     if (inputValue.trim() !== '') {
       const updatedChatHistory: Message[] = [...chatHistory, { role: 'user', content: inputValue }];
       setChatHistory(updatedChatHistory);
       setInputValue('');
       setIsLoading(true);
-      console.log("[Debug] Frontend Chat History:", JSON.stringify(updatedChatHistory));
-
+      setIsTyping(true);
       try {
         // Make a POST request to the backend API
         const response = await fetch('/api', {
@@ -52,10 +61,11 @@ export default function Home() {
           },
           body: JSON.stringify({ chatHistory: updatedChatHistory }),
         });
-  
         if (!response.body) {
           throw new Error('Response body is null');
         }
+
+        // Get the streamed content
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let streamedContent = '';
@@ -69,16 +79,13 @@ export default function Home() {
 
           // Update the chat as the stream progresses
           setChatHistory((prev) => {
-            // Replace or append the streaming message dynamically
             const lastMessage = prev[prev.length - 1];
             if (lastMessage && lastMessage.role === 'system') {
-              // Update the last system message
               return [
                 ...prev.slice(0, -1),
                 { role: 'system', content: streamedContent },
               ];
             } else {
-              // Add a new system message
               return [...prev, { role: 'system', content: streamedContent }];
             }
           });
@@ -90,17 +97,22 @@ export default function Home() {
           { role: 'system', content: "Sorry, I couldn't connect to the server." },
         ]);
       }
+      setIsTyping(false);
     }
   };    
  return (
   <>
       {!showChat ? (
+        // Logo animation
          <Logo />
       ) : (
           <div className="flex flex-col h-screen bg-gray-100">
             <Header />
             {/* Chat messages area */}
-            <div className="flex-1 overflow-y-auto p-4">
+            <div 
+              className="flex-1 overflow-y-auto p-4"
+              ref={chatContainerRef}
+            >
               {chatHistory.map((message, index) => (
                 <div
                   key={index}
@@ -111,14 +123,13 @@ export default function Home() {
                       message.role === 'user' ? 'bg-recruituLightBlue text-white' : 'bg-recruituBlue text-white'
                     }`}
                     style ={{
-                      whiteSpace: "pre-line", /* Preserve newlines and spacing */
-                      wordWrap: "break-word", /* Break long words */
-                      wordBreak: "break-word", /* Prevent overflow for long words */
-                      // padding: "10px",
-                      margin: "5px 0",
+                      whiteSpace: "pre-line",
+                      wordWrap: "break-word",
+                      wordBreak: "break-word",
+                      margin: "5px",
                       fontFamily: "sans-serif",
-                      maxWidth: "90%", /* Limit bubble width for better readability */
-                      overflow: "hidden", /* Hide any accidental overflow */
+                      maxWidth: "90%", 
+                      overflow: "hidden", 
                     }}
                   >
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -149,11 +160,12 @@ export default function Home() {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={(e) => {
-                  console.log("Key pressed:", e.key);
                   if (e.key === 'Enter') handleSend();
                 }}
                 className="flex-1 input input-bordered text-black bg-white"
               />
+              {/* Send buttons */}
+              {!isTyping && (
               <button
                 onClick={handleSend}
                 className="ml-2 text-white p-2 rounded-full hover:bg-hoverBlue bg-recruituBlue"
@@ -165,6 +177,18 @@ export default function Home() {
                   height={20}
                 />
               </button>
+              )}
+              {isTyping && (
+                <button
+                className="ml-2 text-white p-2 rounded-full  bg-hoverBlue"
+                >
+                  <Image
+                    src="/typing.svg"
+                    alt="Send"
+                    width={20}
+                    height={20}
+                  />
+                </button>)}
             </div>
           </div>
       )}

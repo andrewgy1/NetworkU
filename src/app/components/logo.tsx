@@ -2,15 +2,15 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 
-
+// Logo animation
 export default function Logo() {
   const [showByRecruitU, setShowByRecruitU] = useState(false);
   const [fadeOut, setFadeOut] = useState(false);
 
+  // Show by RecruitU subtitle and fade animation
   useEffect(() => {
-    const byRecruitUTimer = setTimeout(() => setShowByRecruitU(true), 1500); // Show "by RecruitU" after 1s
-    const fadeTimer = setTimeout(() => setFadeOut(true), 2000); // Start fading out after 3s
-
+    const byRecruitUTimer = setTimeout(() => setShowByRecruitU(true), 1500); 
+    const fadeTimer = setTimeout(() => setFadeOut(true), 2000); 
 
     return () => {
       clearTimeout(byRecruitUTimer);
