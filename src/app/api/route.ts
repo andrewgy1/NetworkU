@@ -143,7 +143,6 @@ async function getContacts(prompt: string, chatHistory: Message[], openai: OpenA
     // Create URL to query RecruitU's API
     const functionCallArguments = functionCall.arguments;
     const params = JSON.parse(functionCallArguments);
-    console.log(params);
     const queryUrl = `https://dev-dot-recruit-u-f79a8.uc.r.appspot.com/api/lateral-recruiting?` + 
         Object.entries(params)
         .filter(([, value]) => value) 
